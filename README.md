@@ -30,17 +30,25 @@ That's it! No data collection, no background processes, no funny business.
 
 ### macOS Security Warning
 
-Since this isn't signed with an Apple Developer certificate, macOS will show a warning. To run it:
+Since this isn't signed with an Apple Developer certificate, macOS will block it. You **must** run it from Terminal:
 
-1. **Right-click** (or Control+click) the app
-2. Click **Open**
-3. Click **Open** again in the dialog
-
-Or via Terminal:
 ```bash
-xattr -d com.apple.quarantine ./sonos-connector
-./sonos-connector YOUR_ROOM_CODE
+# 1. Open Terminal (Cmd+Space, type "Terminal", hit Enter)
+
+# 2. Navigate to your Downloads folder (or wherever you saved it)
+cd ~/Downloads
+
+# 3. Remove the quarantine flag
+xattr -d com.apple.quarantine ./sonos-connector-macos-arm64
+
+# 4. Make it executable
+chmod +x ./sonos-connector-macos-arm64
+
+# 5. Run it!
+./sonos-connector-macos-arm64 YOUR_ROOM_CODE
 ```
+
+> ⚠️ **Double-clicking won't work** - you must use Terminal for unsigned apps.
 
 ---
 
