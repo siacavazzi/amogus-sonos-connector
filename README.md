@@ -62,18 +62,28 @@ git clone https://github.com/YOUR_USERNAME/amogus-sonos-connector.git
 cd amogus-sonos-connector
 ```
 
-### 2. Install dependencies
+### 2. Run the setup script (handles everything!)
 ```bash
+./start.sh
+```
+
+The `start.sh` script will automatically:
+- ✅ Check for Python 3.7+
+- ✅ Create a virtual environment
+- ✅ Install all dependencies
+- ✅ Start the connector
+
+That's it! Just one command.
+
+### Alternative: Manual Setup
+```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-### 3. Review the code (it's ~350 lines)
-```bash
-cat sonos_connector.py  # Read it yourself!
-```
+# Review the code (it's ~500 lines)
+cat sonos_connector.py
 
-### 4. Run it
-```bash
+# Run it
 python sonos_connector.py YOUR_ROOM_CODE
 ```
 
@@ -82,18 +92,46 @@ python sonos_connector.py YOUR_ROOM_CODE
 ## Command Line Options
 
 ```bash
-# Basic usage
+# Basic usage (interactive speaker selection)
+./start.sh ABCD
+
+# Or with Python directly
 python sonos_connector.py ABCD
 
 # Set volume (0-100)
-python sonos_connector.py ABCD --volume 50
-
-# Include bedroom/suite speakers (excluded by default)
-python sonos_connector.py ABCD --include-bedroom
+./start.sh ABCD --volume 50
 
 # Use a different game server
-python sonos_connector.py ABCD --server https://your-server.com
+./start.sh ABCD --server https://your-server.com
 ```
+
+---
+
+## Speaker Selection
+
+When you start the connector, it will discover all Sonos speakers on your network and let you choose which ones to use:
+
+```
+📻 AVAILABLE SONOS SPEAKERS
+==================================================
+  [1] Living Room (192.168.1.100)
+  [2] Kitchen (192.168.1.101)
+  [3] Bedroom (192.168.1.102)
+==================================================
+
+Commands:
+  • Enter numbers separated by commas (e.g., 1,3,4)
+  • Enter 'all' or 'a' to select all speakers
+  • Enter 'ping <number>' to test a speaker
+  • Enter 'ping all' to test all speakers
+
+Select speakers: 1,2
+✅ Selected 2 speaker(s):
+   • Living Room
+   • Kitchen
+```
+
+Use the **ping** command to play a test sound on a speaker to help identify which is which!
 
 ---
 
