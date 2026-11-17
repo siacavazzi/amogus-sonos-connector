@@ -1,90 +1,83 @@
-# 🔊 Among Us Party Game - Sonos Connector
+# 🔊 Sus Party Sonos Connector
 
-A lightweight, open-source client that connects your local Sonos speakers to the [Among Us Party Game](https://amogus-party.duckdns.org).
+Play [Sus Party](https://susparty.com) game sounds on your Sonos speakers. The meeting bell, the meltdown alarm and the victory music come out of every Sonos in the house instead of one laptop speaker.
 
-> **🔒 Privacy & Security**: This code is 100% open source. You can review every line before running it. The connector only communicates with the game server to receive sound events - it doesn't collect any personal data or access anything else on your network.
+> **🔒 Privacy & Security**: This code is 100% open source, and you can read every line before running it. The connector only talks to the game server to receive sound events, and to your Sonos speakers to play them. It collects no personal data and touches nothing else on your network.
 
 ## What It Does
 
-When you're playing the Among Us party game, this connector:
-1. Discovers Sonos speakers on your local WiFi network
-2. Connects to the game server (via secure WebSocket)
-3. Plays game sounds (meeting alerts, victory music, etc.) through your Sonos speakers
+While you play Sus Party, this connector:
+1. Finds the Sonos speakers on your Wi-Fi and lets you pick which ones to use
+2. Joins your game with its room code (over a secure WebSocket)
+3. Plays the game's sounds (meeting calls, meltdown alarm, victory music and more) through those speakers
+4. When the room closes, asks for the next room code, so you can keep it running all night
 
-That's it! No data collection, no background processes, no funny business.
+You need a computer (Mac, Windows or Linux) on the **same Wi-Fi as your Sonos**. It stays running in a window while you play.
 
 ---
 
-## Option 1: Download the Executable
+## Option 1: Download the App
 
-1. Go to [Releases](../../releases) and download the latest version for your OS
-2. Run it and enter your game room code
+1. Go to [Releases](https://github.com/siacavazzi/amogus-sonos-connector/releases/latest) and download the file for your computer
+2. Start it, pick your speakers, and enter the room code shown on the game screen
 
-| Platform | File |
+| Computer | File |
 |----------|------|
-| macOS (Apple Silicon) | `sonos-connector-macos-arm64` |
-| macOS (Intel) | `sonos-connector-macos-x64` |
+| Mac with Apple chip (M1 or newer) | `sonos-connector-macos-arm64` |
+| Mac with Intel chip | `sonos-connector-macos-x64` |
 | Windows | `sonos-connector.exe` |
 
-> **Note**: macOS executables don't have a `.exe` extension - that's normal!
+> **Note**: The Mac files have no `.exe` or `.app` ending. That's normal.
 
-### macOS Security Warning
+### Mac: run it from Terminal
 
-Since this isn't signed with an Apple Developer certificate, macOS will block it. You **must** run it from Terminal:
+The app isn't signed with an Apple Developer certificate, so macOS blocks it if you double-click it. Run it from Terminal instead:
 
 ```bash
-# 1. Open Terminal (Cmd+Space, type "Terminal", hit Enter)
+# 1. Open Terminal (Cmd+Space, type "Terminal", press Enter)
 
-# 2. Navigate to your Downloads folder (or wherever you saved it)
+# 2. Go to the folder you saved it in
 cd ~/Downloads
 
-# 3. Remove the quarantine flag
+# 3. Remove the "downloaded from the internet" block
 xattr -d com.apple.quarantine ./sonos-connector-macos-arm64
 
-# 4. Make it executable
+# 4. Make it runnable
 chmod +x ./sonos-connector-macos-arm64
 
-# 5. Run it!
-./sonos-connector-macos-arm64 YOUR_ROOM_CODE
+# 5. Run it
+./sonos-connector-macos-arm64
 ```
 
-> ⚠️ **Double-clicking won't work** - you must use Terminal for unsigned apps.
+Use `sonos-connector-macos-x64` in those commands if you have an Intel Mac.
+
+### Windows
+
+Double-click `sonos-connector.exe`. If Windows SmartScreen says it "protected your PC", click **More info**, then **Run anyway**. Allow it on private networks if Windows Firewall asks, since it needs to find your speakers.
 
 ---
 
-## Option 2: Run from Source (Recommended for the Paranoid 😉)
+## Option 2: Run from Source (Mac or Linux)
 
-If you want to verify exactly what's running:
+If you want to see exactly what's running:
 
-### 1. Clone this repo
 ```bash
-git clone https://github.com/YOUR_USERNAME/amogus-sonos-connector.git
+git clone https://github.com/siacavazzi/amogus-sonos-connector.git
 cd amogus-sonos-connector
-```
-
-### 2. Run the setup script (handles everything!)
-```bash
 ./start.sh
 ```
 
-The `start.sh` script will automatically:
-- ✅ Check for Python 3.7+
-- ✅ Create a virtual environment
-- ✅ Install all dependencies
-- ✅ Start the connector
+`start.sh` does the setup for you:
+- ✅ Checks for Python 3.10 or newer
+- ✅ Creates a virtual environment in `.venv`
+- ✅ Installs the dependencies (and updates them after a `git pull`)
+- ✅ Starts the connector
 
-That's it! Just one command.
+### Manual setup (any computer with Python 3.10+)
 
-### Alternative: Manual Setup
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Review the code (it's ~500 lines)
-cat sonos_connector.py
-
-# Run it
-python sonos_connector.py YOUR_ROOM_CODE
+python sonos_connector.py
 ```
 
 ---
@@ -92,24 +85,27 @@ python sonos_connector.py YOUR_ROOM_CODE
 ## Command Line Options
 
 ```bash
-# Basic usage (interactive speaker selection)
-./start.sh ABCD
+# Start and type the room code when asked
+./start.sh
 
-# Or with Python directly
-python sonos_connector.py ABCD
+# Or pass the room code straight away
+./start.sh MAWA
 
-# Set volume (0-100)
-./start.sh ABCD --volume 50
+# Set the starting volume (0-100)
+./start.sh MAWA --volume 50
 
-# Use a different game server
-./start.sh ABCD --server https://your-server.com
+# Show the version
+python sonos_connector.py --version
+
+# Use your own game server (if you self-host Sus Party)
+./start.sh MAWA --server https://your-server.example
 ```
 
 ---
 
 ## Speaker Selection
 
-When you start the connector, it will discover all Sonos speakers on your network and let you choose which ones to use:
+When it starts, the connector lists the Sonos speakers it found and lets you choose:
 
 ```
 📻 AVAILABLE SONOS SPEAKERS
@@ -122,8 +118,8 @@ When you start the connector, it will discover all Sonos speakers on your networ
 Commands:
   • Enter numbers separated by commas (e.g., 1,3,4)
   • Enter 'all' or 'a' to select all speakers
-  • Enter 'ping <number>' to test a speaker
-  • Enter 'ping all' to test all speakers
+  • Enter 'ping <number>' or 'p <number>' to test a speaker
+  • Enter 'ping all' or 'p all' to test all speakers
 
 Select speakers: 1,2
 ✅ Selected 2 speaker(s):
@@ -131,70 +127,83 @@ Select speakers: 1,2
    • Kitchen
 ```
 
-Use the **ping** command to play a test sound on a speaker to help identify which is which!
+Use **ping** to play a test sound on one speaker, so you can tell which is which. Then set the volume (type `test` to hear it, `done` to continue).
 
 ---
 
-## How It Works (Technical Details)
+## How It Works
 
 ```
 ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
 │   Game Server   │◄───────►│ Sonos Connector │────────►│ Sonos Speakers  │
-│  (WebSocket)    │  events │   (this app)    │  audio  │  (your network) │
+│ (susparty.com)  │  events │   (this app)    │  audio  │  (your Wi-Fi)   │
 └─────────────────┘         └─────────────────┘         └─────────────────┘
 ```
 
-1. The connector joins a Socket.IO room for your game (`sonos_ROOMCODE`)
-2. When the game triggers sounds, the server emits events like `play_sound`, `loop_sound`, `stop_sound`
-3. The connector receives these events and tells your Sonos to play the corresponding audio file from a public GitHub repo
+1. The connector sends `sonos_join` with your room code and the server adds it to that game's sound channel
+2. When something happens in the game, the server sends `play_sound`, `loop_sound` or `stop_sound` with a sound name
+3. The connector tells your Sonos to play that sound's file from the public [amogus_assets](https://github.com/siacavazzi/amogus_assets) repo
+4. Every 30 seconds it checks the room is still open. When the game room closes, it stops the sound and asks for the next code
+5. If the connection drops (Wi-Fi blip, server update), it reconnects and rejoins on its own
 
-**Audio source**: `https://raw.githubusercontent.com/siacavazzi/amogus_assets/main/audio/`
-
----
-
-## Requirements
-
-- Python 3.7+ (if running from source)
-- Sonos speakers on the same WiFi network as your computer
-- A game room code from [amogus-party.duckdns.org](https://amogus-party.duckdns.org)
+**Audio files**: `https://raw.githubusercontent.com/siacavazzi/amogus_assets/main/audio/`
 
 ---
 
 ## Troubleshooting
 
 ### "No Sonos speakers found"
-- Ensure your computer is on the same WiFi as your Sonos
-- Check that Sonos speakers are powered on
-- Try restarting the Sonos app
+- Make sure your computer is on the same Wi-Fi as your Sonos (not a guest network)
+- Check that the speakers are switched on and show up in the Sonos app
+- On Windows, allow the connector through the firewall on private networks
+- On a Mac, allow Terminal to find devices on your local network if macOS asks (System Settings → Privacy & Security → Local Network)
 
-### "Connection failed"
-- Verify the room code is correct (4 letters)
-- Check your internet connection
-- Make sure a game is active in that room
+### "Game room ... not found"
+- Check the room code on the game screen (4 letters)
+- The host has to create the room first
 
-### Sound not playing
-- Check the volume setting (`--volume 50`)
-- Make sure speakers aren't muted in the Sonos app
+### "Lost connection to the game server"
+- The connector keeps trying to reconnect by itself. Check the computer's internet connection
+
+### No sound
+- Check the volume you picked, and that the speakers aren't muted in the Sonos app
+- Make sure no one else started music on the same speakers
 
 ---
 
-## Building from Source
+## Development
+
+```bash
+pip install -r requirements.txt
+python -m unittest discover tests
+```
+
+The tests need no Sonos speakers and no game server. They run on every pull request.
+
+### Building the downloads
+
+The **Build downloads** workflow (Actions tab) builds the Mac (Apple chip and Intel) and Windows files. Run it by hand to get the files as a build artifact, or push a version tag to publish a release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+To build one yourself:
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --name sonos-connector --clean sonos_connector.py
+pyinstaller --onefile --clean --name sonos-connector sonos_connector.py
 ```
 
-The executable will be in the `dist/` folder.
+The file ends up in `dist/`.
 
 ---
 
 ## License
 
-MIT License - do whatever you want with it!
-
----
+MIT License. Do whatever you want with it!
 
 ## Contributing
 
-Issues and PRs welcome! This is a fun side project for house parties.
+Issues and pull requests welcome! This started as a side project for house parties.

@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Among Us Sonos Connector - Setup & Start Script
+# Sus Party Sonos Connector - Setup & Start Script
 # ================================================
 # This script will:
 #   1. Check for Python 3
 #   2. Create a virtual environment (if needed)
-#   3. Install dependencies
+#   3. Install dependencies (again whenever requirements.txt changes)
 #   4. Start the connector
 #
 # Usage:
@@ -40,7 +40,7 @@ print_banner() {
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║                                                           ║${NC}"
-    echo -e "${BLUE}║     🎮 AMONG US - SONOS CONNECTOR 🔊                      ║${NC}"
+    echo -e "${BLUE}║     🎮 SUS PARTY - SONOS CONNECTOR 🔊                     ║${NC}"
     echo -e "${BLUE}║                                                           ║${NC}"
     echo -e "${BLUE}║     Setup & Launch Script                                 ║${NC}"
     echo -e "${BLUE}║                                                           ║${NC}"
@@ -86,13 +86,13 @@ check_python() {
         exit 1
     fi
     
-    # Verify Python version is 3.7+
+    # Verify Python version is 3.10+
     PYTHON_VERSION=$($PYTHON_CMD -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
     PYTHON_MAJOR=$($PYTHON_CMD -c 'import sys; print(sys.version_info.major)')
     PYTHON_MINOR=$($PYTHON_CMD -c 'import sys; print(sys.version_info.minor)')
     
-    if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 7 ]); then
-        log_error "Python 3.7+ is required. Found Python $PYTHON_VERSION"
+    if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]); then
+        log_error "Python 3.10+ is required. Found Python $PYTHON_VERSION"
         exit 1
     fi
     
@@ -127,51 +127,37 @@ setup_venv() {
 
 install_dependencies() {
     log_info "Checking dependencies..."
-    
-    # Upgrade pip quietly
-    pip install --upgrade pip --quiet 2>/dev/null || true
-    
-    # Check if requirements are already satisfied
-    if pip check &> /dev/null && \
-       python -c "import socketio; import soco; import requests" 2>/dev/null; then
+
+    # Install again only when requirements.txt changed since the last install,
+    # so updating the connector (git pull) also updates its libraries.
+    STAMP="$VENV_DIR/.requirements-installed"
+    if [ -f "$STAMP" ] && cmp -s "$REQUIREMENTS_FILE" "$STAMP" && \
+       python -c "import socketio, websocket, soco, requests" 2>/dev/null; then
         log_info "All dependencies already installed ✓"
         return 0
     fi
-    
+
     log_info "Installing dependencies..."
-    
-    if [ -f "$REQUIREMENTS_FILE" ]; then
-        pip install -r "$REQUIREMENTS_FILE" --quiet
-    else
-        # Fallback: install required packages directly
-        pip install python-socketio soco requests --quiet
-    fi
-    
-    if [ $? -ne 0 ]; then
+    pip install --upgrade pip --quiet 2>/dev/null || true
+    if ! pip install -r "$REQUIREMENTS_FILE" --upgrade --quiet; then
         log_error "Failed to install dependencies"
         exit 1
     fi
-    
+    cp "$REQUIREMENTS_FILE" "$STAMP"
+
     log_info "Dependencies installed ✓"
 }
 
 # ============ Network Check ============
 
 check_network() {
-    log_info "Checking network connectivity..."
-    
-    # Check if we can reach the game server
-    if ! ping -c 1 -W 2 susparty.com &> /dev/null; then
-        log_warn "Cannot reach game server (susparty.com)"
-        log_warn "Make sure you have internet connectivity"
+    log_info "Checking that the game server is reachable..."
+
+    if command -v curl &> /dev/null && ! curl -fsS -m 5 -o /dev/null https://susparty.com/health 2>/dev/null; then
+        log_warn "Cannot reach the game server (susparty.com)"
+        log_warn "Make sure this computer is online"
     else
-        log_info "Network connectivity OK ✓"
-    fi
-    
-    # Check for local network (Sonos discovery needs it)
-    # This is just informational
-    if ! ping -c 1 -W 2 224.0.0.1 &> /dev/null 2>&1; then
-        log_warn "Multicast may be blocked - Sonos discovery might be slow"
+        log_info "Game server reachable ✓"
     fi
 }
 
