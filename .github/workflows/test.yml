@@ -10,10 +10,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # 24.04: setup-python has older Python builds for it, so the oldest supported version can be tested.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
-        python-version: ["3.9", "3.13"]
+        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

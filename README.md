@@ -68,12 +68,12 @@ cd amogus-sonos-connector
 ```
 
 `start.sh` does the setup for you:
-- ✅ Checks for Python 3.9 or newer
+- ✅ Checks for Python 3.10 or newer
 - ✅ Creates a virtual environment in `.venv`
 - ✅ Installs the dependencies (and updates them after a `git pull`)
 - ✅ Starts the connector
 
-### Manual setup (any computer with Python 3.9+)
+### Manual setup (any computer with Python 3.10+)
 
 ```bash
 pip install -r requirements.txt

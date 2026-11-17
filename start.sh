@@ -86,13 +86,13 @@ check_python() {
         exit 1
     fi
     
-    # Verify Python version is 3.9+
+    # Verify Python version is 3.10+
     PYTHON_VERSION=$($PYTHON_CMD -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
     PYTHON_MAJOR=$($PYTHON_CMD -c 'import sys; print(sys.version_info.major)')
     PYTHON_MINOR=$($PYTHON_CMD -c 'import sys; print(sys.version_info.minor)')
     
-    if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 9 ]); then
-        log_error "Python 3.9+ is required. Found Python $PYTHON_VERSION"
+    if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]); then
+        log_error "Python 3.10+ is required. Found Python $PYTHON_VERSION"
         exit 1
     fi
     
