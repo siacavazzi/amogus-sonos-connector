@@ -1,36 +1,35 @@
 #!/usr/bin/env python3
 """
-Among Us Sonos Connector
-========================
-A lightweight client that connects to the hosted Among Us game server
-and plays sounds on your local Sonos speakers.
+Sus Party Sonos Connector
+=========================
+A small client that joins a Sus Party game (https://susparty.com) by its
+room code and plays the game's sounds on your Sonos speakers.
 
 Usage:
-    python sonos_connector.py [room_code]
-    
-    Or run the executable:
-    ./sonos_connector [room_code]
+    python sonos_connector.py [room_code] [--volume 30] [--server URL]
 
-Requirements:
-    pip install python-socketio soco requests
+Or run the downloaded executable:
+    ./sonos-connector-macos-arm64 [room_code]
+
+Requirements (see requirements.txt):
+    pip install "python-socketio[client]" soco
 """
 
 import sys
 import time
 import logging
 import argparse
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 
 try:
     import socketio
 except ImportError:
     print("Missing dependency: python-socketio")
-    print("Install with: pip install python-socketio")
+    print('Install with: pip install "python-socketio[client]"')
     sys.exit(1)
 
 try:
-    from soco import discover, SoCoException
-    from requests.exceptions import ReadTimeout, ConnectTimeout, Timeout
+    from soco import discover
 except ImportError:
     print("Missing dependency: soco")
     print("Install with: pip install soco")
@@ -38,11 +37,33 @@ except ImportError:
 
 
 # ============ Configuration ============
+__version__ = "1.0.0"
+
 DEFAULT_SERVER = "https://susparty.com"
 AUDIO_BASE_URL = "https://raw.githubusercontent.com/siacavazzi/amogus_assets/main/audio/"
 
 # Ping sound URL - a short beep/chime for speaker identification
 PING_SOUND_URL = AUDIO_BASE_URL + "test.mp3"
+
+# The game sends sound names, not file names. Most names match their file
+# (e.g. "meeting" -> meeting.mp3); these are the ones that don't. Keep in
+# step with GameSpeaker.audio in the game server (server/assets/sonosHandler.py).
+SOUND_FILES = {
+    "crew_victory": "victory.mp3",
+}
+
+# How often to check that the game room is still open. The server only tells
+# phones when a room closes, so the connector asks for itself.
+ROOM_CHECK_SECONDS = 30
+
+# How long to wait for the server to answer a join request.
+JOIN_TIMEOUT_SECONDS = 10
+
+
+def sound_url(sound):
+    """The public URL of the audio file for a game sound name."""
+    return AUDIO_BASE_URL + SOUND_FILES.get(sound, sound + ".mp3")
+
 
 # ============ Logging Setup ============
 logging.basicConfig(
@@ -62,6 +83,8 @@ def discover_all_speakers():
         discovered = discover(timeout=10)
         if not discovered:
             print("❌ No Sonos speakers found!")
+            print("   Make sure this computer is on the same Wi-Fi as your Sonos speakers,")
+            print("   and that they are switched on.")
             return []
         
         discovered = list(discovered)
@@ -380,7 +403,7 @@ class SonosController:
             self.stop()
         
         try:
-            uri = AUDIO_BASE_URL + sound + ".mp3"
+            uri = sound_url(sound)
             self.master_speaker.play_uri(uri)
             logger.info(f"🎵 Playing: {sound}")
             return True
@@ -399,7 +422,7 @@ class SonosController:
         def loop_task():
             with self.lock:
                 try:
-                    uri = AUDIO_BASE_URL + sound + ".mp3"
+                    uri = sound_url(sound)
                     end_time = time.time() + duration
                     
                     while time.time() < end_time and not self.stop_loop:
@@ -436,233 +459,255 @@ class SonosController:
 # ============ Socket.IO Client ============
 class SonosConnector:
     """Connects to the game server and plays sounds on Sonos."""
-    
-    def __init__(self, server_url, speakers, volume=30):
-        self.server_url = server_url
+
+    def __init__(self, server_url, speakers=None, volume=30, sonos=None):
+        self.server_url = server_url.rstrip('/')
         self.room_code = None
-        self.sonos = SonosController(speakers=speakers, volume=volume)
+        self.sonos = sonos if sonos is not None else SonosController(speakers=speakers, volume=volume)
+        # reconnection_attempts=0 means keep trying forever: the game server
+        # restarts when it is updated, and Wi-Fi drops happen at parties.
         self.sio = socketio.Client(reconnection=True, reconnection_attempts=0)
         self.connected = False
         self.joined = False
         self.join_error = None
-        self.room_disbanded = False
-        
+        self.room_ended = False
+        self.room_end_message = None
+        self._join_answered = Event()
+        self._announced = False
+        self._stop = Event()
+        self._checker = None
+
         self._setup_handlers()
-    
+
     def _setup_handlers(self):
         """Set up Socket.IO event handlers."""
-        
+
         @self.sio.event
         def connect():
-            logger.info(f"✅ Connected to server!")
             self.connected = True
-            # If we have a room code, try to join
-            if self.room_code:
+            if self.joined and self.room_code:
+                # Back after a dropped connection or a server restart: rejoin quietly.
+                logger.info("✅ Reconnected to the game server, rejoining the room...")
                 self.sio.emit('sonos_join', {'room_code': self.room_code})
-        
+            else:
+                logger.info("✅ Connected to the game server!")
+
         @self.sio.event
-        def disconnect():
-            logger.info("❌ Disconnected from server")
+        def disconnect(*_args):
             self.connected = False
-            self.joined = False
-        
+            if self.joined and not self._stop.is_set():
+                logger.warning("⚠️  Lost connection to the game server. Reconnecting...")
+
         @self.sio.event
         def connect_error(data):
             logger.error(f"Connection error: {data}")
-        
+
         @self.sio.on('sonos_joined')
-        def on_joined(data):
-            logger.info(f"🎮 Joined room: {self.room_code}")
+        def on_joined(data=None):
+            data = data or {}
+            # The server answers with the room's real code (it fixes look-alike
+            # letters people type, like P for R), so use that from now on.
+            if data.get('room_code'):
+                self.room_code = data['room_code']
             self.joined = True
             self.join_error = None
-            self.room_disbanded = False
-            if self.sonos.ready:
-                self.sonos.play_sound('test')
-        
+            self._join_answered.set()
+            if not self._announced:
+                self._announced = True
+                logger.info(f"🎮 Joined room: {self.room_code}")
+                if self.sonos.ready:
+                    self.sonos.play_sound('test')
+
         @self.sio.on('sonos_error')
-        def on_error(data):
-            error_msg = data.get('message', 'Unknown error')
-            logger.error(f"❌ {error_msg}")
-            self.join_error = error_msg
-            self.joined = False
-        
+        def on_error(data=None):
+            message = (data or {}).get('message', 'Unknown error')
+            if self.joined:
+                # We were in a room and the server no longer knows it: the game is over.
+                self._end_room(message)
+            else:
+                logger.error(f"❌ {message}")
+                self.join_error = message
+                self._join_answered.set()
+
         @self.sio.on('room_disbanded')
         def on_room_disbanded(data=None):
-            logger.info("📢 Room has been disbanded by the host")
-            self.sonos.stop()
-            self.joined = False
-            self.room_disbanded = True
-        
+            self._end_room((data or {}).get('message', 'Room has been closed'))
+
         # Sound events from the game
         @self.sio.on('play_sound')
-        def on_play_sound(data):
-            sound = data.get('sound')
+        def on_play_sound(data=None):
+            sound = (data or {}).get('sound')
             if sound:
                 self.sonos.play_sound(sound)
-        
+
         @self.sio.on('loop_sound')
-        def on_loop_sound(data):
+        def on_loop_sound(data=None):
+            data = data or {}
             sound = data.get('sound')
-            duration = data.get('duration', 60)
+            duration = data.get('duration') or 60
             if sound:
                 self.sonos.loop_sound(sound, duration)
-        
+
         @self.sio.on('stop_sound')
         def on_stop_sound(data=None):
             self.sonos.stop()
-    
+
+    def _end_room(self, message):
+        if not self.joined:
+            return
+        logger.info(f"📢 The game room has closed ({message})")
+        self.sonos.stop()
+        self.joined = False
+        self.room_end_message = message
+        self.room_ended = True
+
+    def _check_room(self):
+        """Every so often, ask the server if our room is still open."""
+        while not self._stop.wait(ROOM_CHECK_SECONDS):
+            if self.connected and self.joined and self.room_code:
+                try:
+                    self.sio.emit('sonos_join', {'room_code': self.room_code})
+                except Exception:
+                    pass  # The reconnect logic will sort it out.
+
     def connect(self):
         """Connect to the game server."""
         if not self.sonos.ready:
             logger.error("❌ Sonos not ready - cannot connect")
             return False
-        
+
         try:
             logger.info(f"🔌 Connecting to {self.server_url}...")
-            self.sio.connect(self.server_url, transports=['websocket', 'polling'])
-            return True
+            self.sio.connect(
+                self.server_url,
+                transports=['websocket', 'polling'],
+                headers={'User-Agent': f'SusPartySonosConnector/{__version__}'},
+                wait_timeout=15,
+            )
         except Exception as e:
             logger.error(f"❌ Connection failed: {e}")
             return False
-    
-    def join_room(self, room_code):
+
+        if self._checker is None:
+            self._checker = Thread(target=self._check_room, daemon=True)
+            self._checker.start()
+        return True
+
+    def join_room(self, room_code, timeout=JOIN_TIMEOUT_SECONDS):
         """Attempt to join a game room. Returns True if successful."""
-        self.room_code = room_code.upper()
+        self.room_code = room_code.strip().upper()
         self.joined = False
         self.join_error = None
-        
-        if self.connected:
-            self.sio.emit('sonos_join', {'room_code': self.room_code})
-            
-            # Wait for response (with timeout)
-            timeout = 5
-            start = time.time()
-            while time.time() - start < timeout:
-                if self.joined:
-                    return True
-                if self.join_error:
-                    return False
-                time.sleep(0.1)
-            
-            logger.error("❌ Timeout waiting for room join response")
+        self.room_ended = False
+        self.room_end_message = None
+        self._announced = False
+        self._join_answered.clear()
+
+        if not self.connected:
+            logger.error("❌ Not connected to the game server")
             return False
-        return False
-    
+
+        self.sio.emit('sonos_join', {'room_code': self.room_code})
+        if not self._join_answered.wait(timeout):
+            logger.error("❌ The game server did not answer. Check your internet connection.")
+            return False
+        return self.joined
+
     def disconnect(self):
         """Disconnect from the server."""
+        self._stop.set()
+        self.joined = False
         self.sonos.stop()
-        if self.connected:
-            self.sio.disconnect()
-    
-    def wait(self):
-        """Wait for the connection to end."""
         try:
-            self.sio.wait()
-        except KeyboardInterrupt:
-            logger.info("\n👋 Shutting down...")
-            self.disconnect()
+            self.sio.disconnect()
+        except Exception:
+            pass
 
 
 # ============ Main ============
 def print_banner():
-    print("""
+    print(f"""
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║     🎮 AMONG US - SONOS CONNECTOR 🔊                      ║
+║     🎮 SUS PARTY - SONOS CONNECTOR 🔊  v{__version__:<17}║
 ║                                                           ║
-║     Connect your Sonos speakers to the game!              ║
+║     Play the game's sounds on your Sonos speakers         ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
     """)
 
 
+def ask_room_code(connector):
+    try:
+        return input("Enter room code: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n👋 Goodbye!")
+        connector.disconnect()
+        sys.exit(0)
+
+
 def main():
-    print_banner()
-    
-    parser = argparse.ArgumentParser(description='Connect Sonos speakers to Among Us game')
-    parser.add_argument('room_code', nargs='?', help='Game room code to join')
-    parser.add_argument('--server', default=DEFAULT_SERVER, help='Game server URL')
+    parser = argparse.ArgumentParser(description='Play Sus Party game sounds on your Sonos speakers')
+    parser.add_argument('room_code', nargs='?', help='Game room code to join (shown on the game screen)')
+    parser.add_argument('--server', default=DEFAULT_SERVER, help=f'Game server URL (default: {DEFAULT_SERVER})')
     parser.add_argument('--volume', type=int, default=30, help='Initial speaker volume (0-100)')
-    
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
+
     args = parser.parse_args()
-    
+    print_banner()
+
     # Step 1: Discover and select speakers
     all_speakers = discover_all_speakers()
     selected_speakers = interactive_speaker_selection(all_speakers)
-    
+
     if not selected_speakers:
         logger.error("No speakers selected!")
         sys.exit(1)
-    
+
     # Step 2: Configure volume with testing
-    volume = interactive_volume_selection(selected_speakers, args.volume)
-    
+    volume = interactive_volume_selection(selected_speakers, max(0, min(100, args.volume)))
+
     # Step 3: Create connector
     connector = SonosConnector(
         server_url=args.server,
         speakers=selected_speakers,
         volume=volume
     )
-    
+
     # Step 4: Connect to server
     if not connector.connect():
         sys.exit(1)
-    
-    # Step 5: Main room join loop (handles rejoining after room disbands)
+
+    # Step 5: Join a room, play its sounds until it closes, then offer the next one.
     room_code = args.room_code
-    while True:
-        # Join room with retry logic
+    try:
         while True:
             if not room_code:
                 print()
-                try:
-                    room_code = input("Enter room code: ").strip()
-                except (EOFError, KeyboardInterrupt):
-                    print("\n👋 Goodbye!")
-                    connector.disconnect()
-                    sys.exit(0)
-            
+                room_code = ask_room_code(connector)
             if not room_code:
                 print("Room code is required. Try again.")
                 continue
-            
-            if connector.join_room(room_code):
-                # Successfully joined!
-                break
-            else:
-                # Failed to join - prompt again
+
+            if not connector.join_room(room_code):
                 print()
-                print("Please try a different room code.")
-                room_code = None  # Clear so we prompt again
-        
-        logger.info("🎧 Listening for game events... (Ctrl+C to quit)")
-        
-        # Wait while connected to room
-        try:
-            while connector.joined and not connector.room_disbanded:
-                time.sleep(0.5)
-            
-            # If room was disbanded, prompt for new room
-            if connector.room_disbanded:
-                print()
-                print("=" * 50)
-                print("The room has ended. Join a new room to continue.")
-                print("=" * 50)
-                room_code = None  # Clear so we prompt again
-                connector.room_disbanded = False
+                print("Please check the code on the game screen and try again.")
+                room_code = None
                 continue
-            
-            # If we got here without being joined, something went wrong
-            if not connector.connected:
-                logger.error("Lost connection to server")
-                break
-                
-        except KeyboardInterrupt:
-            print("\n👋 Goodbye!")
-            connector.disconnect()
-            sys.exit(0)
-    
-    connector.disconnect()
+
+            logger.info("🎧 Listening for game sounds... (Ctrl+C to quit)")
+            while not connector.room_ended:
+                time.sleep(0.5)
+
+            print()
+            print("=" * 50)
+            print("The game room has closed. Enter the next room code to keep going.")
+            print("=" * 50)
+            room_code = None
+    except KeyboardInterrupt:
+        print("\n👋 Goodbye!")
+    finally:
+        connector.disconnect()
 
 
 if __name__ == '__main__':

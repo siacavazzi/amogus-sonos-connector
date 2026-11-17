@@ -1,0 +1,64 @@
+name: Build downloads
+
+# Builds the Mac and Windows downloads.
+#   - Run it by hand from the Actions tab to get the files as a build artifact.
+#   - Push a tag like v1.0.0 to also publish them as a GitHub release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest        # Apple Silicon
+            name: sonos-connector-macos-arm64
+          - os: macos-15-intel      # Intel Macs
+            name: sonos-connector-macos-x64
+          - os: windows-latest
+            name: sonos-connector.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements.txt pyinstaller
+      - name: Build
+        shell: bash
+        run: |
+          pyinstaller --onefile --clean --name sonos-connector \
+            --collect-submodules engineio --collect-submodules socketio --collect-submodules soco \
+            sonos_connector.py
+          if [ -f dist/sonos-connector.exe ]; then out=dist/sonos-connector.exe; else out=dist/sonos-connector; fi
+          "./$out" --version
+          mkdir -p upload && cp "$out" "upload/${{ matrix.name }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: upload/${{ matrix.name }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" files/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Sonos Connector ${GITHUB_REF_NAME}" \
+            --notes "Download the file for your computer, then follow the steps in the README."

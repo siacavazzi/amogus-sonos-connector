@@ -1,4 +1,5 @@
-# Sonos Connector Dependencies
-python-socketio[client]>=5.0.0
-soco>=0.29.0
-requests>=2.25.0
+# Sus Party Sonos Connector dependencies
+# The [client] extra brings the WebSocket and HTTP libraries the connector needs.
+python-socketio[client]>=5.11,<6
+soco>=0.30,<1
+requests>=2.31
